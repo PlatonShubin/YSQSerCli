@@ -8,7 +8,7 @@ SocketClientChat::SocketClientChat(QObject* parent) : QObject(parent)
     socketClient = new SocketClientCore(this);
 
     connect(socketClient, SIGNAL(disconnected()), this, SLOT(onSocketDisconnected()));
-    connect(socketClient, SIGNAL(blockReceived(DataBlock)), this, SLOT(onBlockReceived(DataBlock)));
+    connect(socketClient, SIGNAL(blockReceived(DataBlock &)), this, SLOT(onBlockReceived(DataBlock &)));
 
     socketClient->connectToHost(QHostAddress::LocalHost, 27016);
 
@@ -34,7 +34,7 @@ void SocketClientChat::onSocketDisconnected()
     qDebug() << "Disconnected from the server.";
 }
 
-void SocketClientChat::onBlockReceived(DataBlock block)
+void SocketClientChat::onBlockReceived(DataBlock &block)
 {
     if (!block.receiver)
         return;

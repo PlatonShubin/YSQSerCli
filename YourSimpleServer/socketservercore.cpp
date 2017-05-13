@@ -4,15 +4,14 @@ using namespace YourSimpleServer;
 
 SocketServerCore::SocketServerCore(QObject *parent) : QTcpServer(parent)
 {
-    socketClients = new QList<SocketClientCore *>();
-
     if (listen(QHostAddress::Any, 27016))
         qDebug() << "Server successfully started on port 27016";
 }
 
 SocketServerCore::~SocketServerCore()
 {
-    delete socketClients;
+    qDeleteAll(clients.begin(), clients.end()); //questionable
+    qDeleteAll(noidClients.begin(), noidClients.end()); //questionable
 }
 
 void SocketServerCore::incomingConnection(qintptr sockDesc)
@@ -22,7 +21,7 @@ void SocketServerCore::incomingConnection(qintptr sockDesc)
     if (!sockClient->setSocketDescriptor(sockDesc))
         qDebug() << "Error. Socket descriptor not set.";
 
-    socketClients->append(sockClient);
+    noidClients.append(sockClient); //client has no id yet
 
     qDebug() << QString("New incoming connection from %1:%2").arg(sockClient->peerAddress().toString().remove(0, 7)).arg(sockClient->peerPort());
 
@@ -37,34 +36,40 @@ void SocketServerCore::onSocketDisconnected()
 
     qDebug() << QString("Client %1:%2 disconnected").arg(sockClient->peerAddress().toString().remove(0, 7)).arg(sockClient->peerPort());
 
-    socketClients->removeOne(sockClient);
+    //remove from container
+    if (!sockClient->hasId()) noidClients.removeOne(sockClient);
+    else clients.remove(sockClient->getId());
+
+    sockClient->deleteLater(); //as doc warns
 }
 
 void SocketServerCore::onBlockReceived(DataBlock &block)
 {
-    if (!block.receiver)
+    if (!block.receiver) //strange block
         return;
 
-    if (block.receiver & ClientType::Server)
+    if (block.receiver & ClientType::Server) //block is for the server
     {
         qDebug() << "New message to server from client" << (block.sender >> 2); //сдвигаем на два бита, чтоб узнать id.
 
         execCommand(block, (SocketClientCore *)sender());
     }
-    else if (block.receiver & ClientType::Client)
+    else if (block.receiver & ClientType::Client) //block is for the client(s)
     {
-        quint32 receiverId = block.receiver >> 2;
+        quint16 receiverId = block.receiver >> 2;
 
-        if (receiverId == 0)
+        if (receiverId == 0) //block is for every client
         {
-            for (int i = 0; i < socketClients->size(); i++)
+            for (QHash<quint16, SocketClientCore *>::const_iterator
+                 i = clients.constBegin();
+                 i != clients.constEnd(); ++i) //with id only
             {
-                if (block.sender >> 2 == socketClients->at(i)->getId())
+                if (block.sender >> 2 == i.value()->getId())
                     continue; //не посылать блок тому, кто его отправил
 
                 block.receiver = ClientType::Client;
-                block.receiver += socketClients->at(i)->getId() << 2;
-                socketClients->at(i)->sendBlock(block);
+                block.receiver += i.value()->getId() << 2;
+                i.value()->sendBlock(block);
             }
 
             qDebug() << "Block was sent to every client";
@@ -72,15 +77,12 @@ void SocketServerCore::onBlockReceived(DataBlock &block)
             //TODO: сделать, чтоб не надо было всё это удалять
             //delete block; //вроде сделано, теперь блок копируется
         }
-        else for (int i = 0; i < socketClients->size(); i++) {
-            if (socketClients->at(i)->getId() == receiverId)
-            {
-                socketClients->at(i)->sendBlock(block);
-                qDebug() << "Block was sent to client" << receiverId;
-
-                break;
-            }
+        else if (clients.contains(receiverId))
+        {
+            clients[receiverId]->sendBlock(block);
+            qDebug() << "Block was sent to the client" << receiverId;
         }
+        else qDebug() << "No client with such id";
     }
     else if (block.receiver & ClientType::Group)
     {
@@ -89,15 +91,29 @@ void SocketServerCore::onBlockReceived(DataBlock &block)
 
 }
 
-void SocketServerCore::execCommand(const DataBlock &cmdBlock, SocketClientCore *sender)
+void SocketServerCore::execCommand(const DataBlock &cmdBlock, SocketClientCore *client)
 {
     switch (cmdBlock.command) {
     case CoreCommand::ProvideInfo:
-        sender->setId(cmdBlock.sender >> 2);
-        sender->setName(QString::fromUtf8(cmdBlock.argument));
-        qDebug() << "Name for id" << sender->getId() << "is now" << sender->getName();
+
+        updateClientInfo(client, cmdBlock.sender >> 2,
+                         QString::fromUtf8(cmdBlock.argument));
+
         break;
     default:
         break;
+    }
+}
+
+void SocketServerCore::updateClientInfo(SocketClientCore *client, quint16 id, const QString &name)
+{
+    client->setId(id);
+    client->setName(name);
+    qDebug() << "Name for id" << client->getId() << "is now" << client->getName();
+
+    if (noidClients.contains(client)) //if new without an id
+    {
+        noidClients.removeOne(client);
+        clients[id] = client;
     }
 }

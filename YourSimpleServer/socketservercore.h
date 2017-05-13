@@ -2,6 +2,7 @@
 #define SOCKETKSERVER_H
 
 #include <QTcpServer>
+#include <QHash>
 #include <QList>
 
 #include "../YourSimpleClient/socketclientcore.h"
@@ -22,14 +23,17 @@ public:
 private slots:
     void onSocketDisconnected();
     void onBlockReceived(DataBlock &block);
+
+private:
     void execCommand(const DataBlock &cmdBlock, SocketClientCore *sender);
+    void updateClientInfo(SocketClientCore *client, quint16 id, const QString &name);
 
 protected:
     void incomingConnection(qintptr sockDesc);
 
 private:
-    //клиентские сокеты, кто сейчас подключен
-    QList<SocketClientCore *> *socketClients;
+    QHash<quint16, SocketClientCore*> clients; //clients connected to the server
+    QList<SocketClientCore *> noidClients; //clients without id
 };
 
 }

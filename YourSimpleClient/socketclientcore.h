@@ -37,6 +37,7 @@ public:
     void setName(const QString &name) { clientName = name; }
     quint16 getId() const { return clientId; }
     void setId(quint16 id) { clientId = id; }
+    bool hasId() const { return clientId != 0; }
     ClientStatus getStatus() const { return clientStatus; }
     void setStatus(ClientStatus status) { clientStatus = status; }
 
@@ -53,7 +54,7 @@ private:
     quint16 lastBlockSize = 0;
 
     QString clientName;
-    quint16 clientId = 0;
+    quint16 clientId = 0; //id not initialized
     ClientStatus clientStatus = Disonnected;
 };
 

@@ -26,7 +26,7 @@ public:
 
 private slots:
     void onSocketDisconnected();
-    void onBlockReceived(DataBlock block);
+    void onBlockReceived(DataBlock &block);
 
 private:
     void execCommand(const DataBlock &cmdBlock);

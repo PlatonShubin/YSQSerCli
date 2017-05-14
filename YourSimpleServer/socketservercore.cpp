@@ -12,6 +12,8 @@ SocketServerCore::~SocketServerCore()
 {
     qDeleteAll(clients.begin(), clients.end()); //questionable
     qDeleteAll(noidClients.begin(), noidClients.end()); //questionable
+
+    close();
 }
 
 void SocketServerCore::incomingConnection(qintptr sockDesc)
@@ -45,59 +47,49 @@ void SocketServerCore::onSocketDisconnected()
 
 void SocketServerCore::onBlockReceived(DataBlock &block)
 {
-    if (!block.receiver) //strange block
+    if (!block.receiverType()) //strange block
         return;
 
-    if (block.receiver & ClientType::Server) //block is for the server
+    if (block.isForServer()) //block is for the server
     {
-        qDebug() << "New message to server from client" << (block.sender >> 2); //сдвигаем на два бита, чтоб узнать id.
+        qDebug() << "New message to server from client" << (block.senderId()); //сдвигаем на два бита, чтоб узнать id.
 
         execCommand(block, (SocketClientCore *)sender());
     }
-    else if (block.receiver & ClientType::Client) //block is for the client(s)
+    else if (block.isForClient()) //block is for the client(s)
     {
-        quint16 receiverId = block.receiver >> 2;
-
-        if (receiverId == 0) //block is for every client
+        if (block.isForAll()) //block is for every client
         {
             for (QHash<quint16, SocketClientCore *>::const_iterator
                  i = clients.constBegin();
                  i != clients.constEnd(); ++i) //with id only
             {
-                if (block.sender >> 2 == i.value()->getId())
+                if (block.senderId() == i.value()->getId())
                     continue; //не посылать блок тому, кто его отправил
 
-                block.receiver = ClientType::Client;
-                block.receiver += i.value()->getId() << 2;
-                i.value()->sendBlock(block);
+                i.value()->sendBlock(block.toClient(i.value()->getId()));
             }
 
             qDebug() << "Block was sent to every client";
-
-            //TODO: сделать, чтоб не надо было всё это удалять
-            //delete block; //вроде сделано, теперь блок копируется
         }
-        else if (clients.contains(receiverId))
+        else if (clients.contains(block.receiverId()))
         {
-            clients[receiverId]->sendBlock(block);
-            qDebug() << "Block was sent to the client" << receiverId;
+            clients[block.receiverId()]->sendBlock(block);
+            qDebug() << "Block was sent to the client" << block.receiverId();
         }
         else qDebug() << "No client with such id";
     }
-    else if (block.receiver & ClientType::Group)
-    {
-        //not implemented yet
-    }
+    //else if (block.isForGroup()) //not implemented yet
 
 }
 
 void SocketServerCore::execCommand(const DataBlock &cmdBlock, SocketClientCore *client)
 {
-    switch (cmdBlock.command) {
+    switch (cmdBlock.command()) {
     case CoreCommand::ProvideInfo:
 
-        updateClientInfo(client, cmdBlock.sender >> 2,
-                         QString::fromUtf8(cmdBlock.argument));
+        updateClientInfo(client, cmdBlock.senderId(),
+                         QString::fromUtf8(cmdBlock.argument()));
 
         break;
     default:

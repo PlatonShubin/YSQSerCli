@@ -36,16 +36,16 @@ void SocketClientChat::onSocketDisconnected()
 
 void SocketClientChat::onBlockReceived(DataBlock &block)
 {
-    if (!block.receiver)
+    if (!block.receiverId() || !block.receiverType()) //strange client
         return;
 
-    if (block.receiver & ClientType::Client)
+    if (block.receiverType() == Client)
     {
 
-        if (block.receiver >> 2 != socketClient->getId())
-            qDebug() << QString("Receiver's id (%1) doesn't match my id (%2)").arg(block.receiver >> 2).arg(socketClient->getId());
+        if (block.receiverId() != socketClient->getId())
+            qDebug() << QString("Receiver's id (%1) doesn't match my id (%2)").arg(block.receiverId()).arg(socketClient->getId());
 
-        qDebug() << "New message from sender" << (block.sender >> 2); //сдвигаем на два бита, чтоб узнать id.
+        qDebug() << "New message from sender" << (block.senderId());
 
         execCommand(block);
     }
@@ -58,9 +58,9 @@ void SocketClientChat::onBlockReceived(DataBlock &block)
 
 void SocketClientChat::execCommand(const DataBlock &cmdBlock)
 {
-    switch (cmdBlock.command) {
+    switch (cmdBlock.command()) {
     case DisplayMessage:
-        displayMessage(QString::fromUtf8(cmdBlock.argument));
+        displayMessage(QString::fromUtf8(cmdBlock.argument()));
         break;
     default:
         break;
@@ -75,19 +75,16 @@ void SocketClientChat::displayMessage(const QString &msg)
 
 void SocketClientChat::sendInfo() const
 {
-    DataBlock block(ProvideInfo, socketClient->getName().toUtf8(),
-                                     ClientType::Client, socketClient->getId());
+    DataBlock block(ProvideInfo, socketClient->getName().toUtf8());
 
-    socketClient->sendBlock(block);
+    socketClient->sendBlock(block.fromClient(socketClient->getId()).toServer());
     qDebug() << "Info was sent to the server";
 }
 
 void SocketClientChat::sendMessage(const QString &msg)
 {
-    DataBlock block(DisplayMessage, msg.toUtf8(),
-                    ClientType::Client, socketClient->getId(),
-                    ClientType::All);
+    DataBlock block(DisplayMessage, msg.toUtf8());
 
-    socketClient->sendBlock(block);
+    socketClient->sendBlock(block.fromClient(socketClient->getId()).toAll());
     qDebug() << "Message" << msg << "was sent to everyone";
 }

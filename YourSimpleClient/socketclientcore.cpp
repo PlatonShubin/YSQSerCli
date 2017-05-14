@@ -5,15 +5,10 @@ using namespace YourSimpleClient;
 
 void SocketClientCore::sendBlock(const DataBlock &block)
 {
-    QByteArray resBlock;
-    QDataStream dataStream(&resBlock, QIODevice::WriteOnly);
+    QDataStream dataStream(this);
 
-    dataStream << (quint16)0 << block.receiver << block.sender;
-    dataStream << block.command;
-    resBlock.append(block.argument);
-    dataStream.device()->seek(0); dataStream << (quint16)(resBlock.size() - sizeof(quint16));
+    dataStream << block;
 
-    write(resBlock);
 }
 
 SocketClientCore::SocketClientCore(QObject *parent) : QTcpSocket(parent)
@@ -24,27 +19,23 @@ SocketClientCore::SocketClientCore(QObject *parent) : QTcpSocket(parent)
 void SocketClientCore::onSocketReadyRead()
 {
     QDataStream dataStream(this);
+    DataBlock block;
 
-    quint64 bytes = 0;
-
-    while ((bytes = bytesAvailable()) > 0) //Пока в сокете что-то валяется
+    //for some reason if several blocks arrive too fast
+    //readyRead() not emited several times
+    while(bytesAvailable() > 0)
     {
-        bytes = bytesAvailable();
-        if (lastBlockSize == 0) //Если блок новый
-        {
-            if (bytes < sizeof(lastBlockSize))
-                break; //Размер меньше 2 может быть ТОЛЬКО когда блок новый
+        dataStream.startTransaction();
 
-            dataStream >> lastBlockSize;
-        }
+        dataStream >> block;
 
-        if (bytes < lastBlockSize)
-            break; //ждём полного блока
+        //if a block wasn't full and we read past end
+        if (!dataStream.commitTransaction())
+            return; //then we wait for more data
 
-        DataBlock block(lastBlockSize, dataStream);
-
-        lastBlockSize = 0; //Готовы принимать новый блок
-
+        //Okay, here we send a non-const reference to the block.
+        //According to the doc it should be safe even when the connection
+        //is not direct. (I just don't know if it is true for non-const refs)
         emit blockReceived(block);
     }
 }
